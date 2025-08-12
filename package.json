@@ -2,9 +2,25 @@
   "name": "ts-16",
   "module": "index.ts",
   "type": "module",
-  "private": true,
+  "private": false,
+  "scripts": {
+    "clean": "rimraf dist",
+    "build:esm": "bun build src/index.ts --outdir dist --sourcemap --minify --target=browser --format=esm",
+    "build:types": "tsc --emitDeclarationOnly -p tsconfig.json",
+    "build": "bun run clean && bun run build:esm && bun run build:types",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "lint": "bunx eslint .",
+    "format": "bunx prettier . -w"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@typescript-eslint/eslint-plugin": "^8.39.1",
+    "@typescript-eslint/parser": "^8.39.1",
+    "eslint": "^9.33.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "rimraf": "^6.0.1"
   },
   "peerDependencies": {
     "typescript": "^5"
