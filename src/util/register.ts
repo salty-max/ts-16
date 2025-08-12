@@ -1,3 +1,5 @@
+import type { RegIndex } from '../instructions'
+
 export const GENERIC_REGISTERS_COUNT = 8
 
 export const REGISTER_NAMES = [
@@ -14,3 +16,7 @@ export const REGISTER_NAMES = [
 ] as const
 
 export type RegName = (typeof REGISTER_NAMES)[number]
+
+export function regIndex(name: RegName): RegIndex {
+  return REGISTER_NAMES.indexOf(name) as RegIndex
+}
