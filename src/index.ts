@@ -1,3 +1,4 @@
+import readline from 'readline'
 import { createMemory } from './memory'
 import { OPCODES, type OpcodeName } from './instructions'
 import CPU from './cpu'
@@ -13,13 +14,13 @@ const cpu = new CPU(memory)
 
 // Define the test program as [opcode, operands...]
 const program: number[] = [
-  OPCODES.MOV_LIT_REG,
-  0x12,
-  0x34,
+  OPCODES.MOV_MEM_REG,
+  0x01,
+  0x00,
   regIndex('r1'),
   OPCODES.MOV_LIT_REG,
-  0xab,
-  0xcd,
+  0x00,
+  0x01,
   regIndex('r2'),
   OPCODES.ADD_REG_REG,
   regIndex('r1'),
@@ -28,30 +29,30 @@ const program: number[] = [
   regIndex('acc'),
   0x01,
   0x00,
+  OPCODES.JMP_NOT_EQ,
+  0x00,
+  0x03,
+  0x00,
+  0x00,
 ]
 
 // Load and run
 loadProgram(cpu, program)
 
 cpu.debug()
-
-cpu.step()
-cpu.debugDiff({
-  unchanged: 'dim',
-  label: 'After MOV_LIT_REG r1',
-})
-
-cpu.step()
-cpu.debugDiff({
-  unchanged: 'dim',
-  label: 'After MOV_LIT_REG r2',
-})
-
-cpu.step()
-cpu.debugDiff({
-  unchanged: 'dim',
-  label: 'After ADD_REG_REG',
-})
-
-cpu.step()
+cpu.viewMemoryAt(cpu.getRegister('ip'))
 cpu.viewMemoryAt(0x0100)
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+})
+
+rl.on('line', () => {
+  cpu.step()
+  cpu.debugDiff({
+    unchanged: 'dim',
+  })
+  cpu.viewMemoryAt(cpu.getRegister('ip'))
+  cpu.viewMemoryAt(0x0100)
+})
