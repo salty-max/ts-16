@@ -18,7 +18,6 @@ export function loadProgram(cpu: CPU, bytes: number[]) {
   u8.set(bytes, 0)
 }
 
-/** Pretty stepper that prints a labeled diff and optional memory view */
 export function stepAndShow(
   cpu: CPU,
   label: string,
@@ -35,7 +34,6 @@ export function stepAndShow(
   }
 }
 
-/** Optional: a tiny assertion helper that also emits a labeled diff on failure */
 export function expectReg(cpu: CPU, reg: RegName, toBe: number, ctx?: string) {
   try {
     const got = cpu.getRegister(reg)
@@ -52,7 +50,46 @@ export function expectReg(cpu: CPU, reg: RegName, toBe: number, ctx?: string) {
   }
 }
 
-/** Just a nice section header in output */
+export function expectMem(cpu: CPU, addr: number, toBe: number, ctx?: string) {
+  try {
+    const got = cpu.getWord(addr)
+    expect(got).toBe(toBe)
+  } catch (e) {
+    // Show a small memory window centered on addr (clamped at 0)
+    const start = Math.max(0, addr - 8)
+    console.log(
+      `${ANSI_BOLD}${ANSI_GREY}Assertion failed${ANSI_RESET}${
+        ctx ? `: ${ctx}` : ''
+      }`
+    )
+    cpu.viewMemoryAt(start, 16)
+    throw e
+  }
+}
+
+export function expectIPDelta(
+  cpu: CPU,
+  beforeIP: number,
+  delta: number,
+  ctx?: string
+) {
+  try {
+    const got = cpu.getRegister('ip')
+    expect(got).toBe(beforeIP + delta)
+  } catch (e) {
+    console.log(
+      `${ANSI_BOLD}${ANSI_GREY}Assertion failed${ANSI_RESET}${
+        ctx ? `: ${ctx}` : ''
+      }`
+    )
+    cpu.debugDiff({
+      label: ctx ?? `after expecting ip==0x${(beforeIP + delta).toString(16)}`,
+      unchanged: 'hide', // show only changed regs
+    })
+    throw e
+  }
+}
+
 export function section(title: string) {
   console.log(`${ANSI_BOLD}${ANSI_GREY}── ${title} ──${ANSI_RESET}`)
 }
