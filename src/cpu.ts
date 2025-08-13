@@ -17,6 +17,7 @@ import {
   ANSI_BLUE,
 } from './util/logger'
 import { u16 } from './util'
+import { SHA224 } from 'bun'
 
 class CPU {
   private memory: Memory
@@ -48,6 +49,26 @@ class CPU {
     this.writeReg(regIndex(name), value)
   }
 
+  getByte(addr: number): number {
+    this.assertAddr(addr, 1)
+    return this.memory.getUint8(addr)
+  }
+
+  setByte(addr: number, value: number) {
+    this.assertAddr(addr, 1)
+    this.memory.setUint8(addr, value & 0xff)
+  }
+
+  getWord(addr: number): number {
+    this.assertAddr(addr, 2)
+    return this.memory.getUint16(addr)
+  }
+
+  setWord(addr: number, value: number) {
+    this.assertAddr(addr, 2)
+    this.memory.setUint16(addr, u16(value))
+  }
+
   execute<O extends Opcode>(opcode: O) {
     switch (opcode) {
       case OPCODES.MOV_LIT_REG: {
@@ -62,18 +83,36 @@ class CPU {
       }
       case OPCODES.MOV_REG_MEM: {
         const [src, addr] = this.readOperands(OPCODES.MOV_REG_MEM)
-        this.memory.setUint16(addr, this.readReg(src))
+        this.setWord(addr, this.readReg(src))
         return
       }
       case OPCODES.MOV_MEM_REG: {
         const [addr, dst] = this.readOperands(OPCODES.MOV_MEM_REG)
-        const value = this.memory.getUint16(addr)
+        const value = this.getWord(addr)
         this.writeReg(dst, value)
         return
       }
       case OPCODES.MOV_LIT_MEM: {
         const [lit, addr] = this.readOperands(OPCODES.MOV_LIT_MEM)
-        this.memory.setUint16(addr, lit)
+        this.setWord(addr, lit)
+        return
+      }
+      case OPCODES.PSH_LIT: {
+        const [lit] = this.readOperands(OPCODES.PSH_LIT)
+        this.push(lit)
+        return
+      }
+      case OPCODES.PSH_REG: {
+        const [src] = this.readOperands(OPCODES.PSH_REG)
+        this.push(this.readReg(src))
+        return
+      }
+      case OPCODES.POP: {
+        const [dst] = this.readOperands(OPCODES.POP)
+        const nextSP = this.readReg(regIndex('sp')) + 2
+        this.writeReg(regIndex('sp'), nextSP)
+        const value = this.getWord(nextSP)
+        this.writeReg(dst, value)
         return
       }
       case OPCODES.ADD_REG_REG: {
@@ -168,8 +207,17 @@ class CPU {
   }
 
   viewMemoryAt(addr: number, length = 8) {
-    const bytes = Array.from({ length }, (_, i) =>
-      this.memory.getUint8(addr + i)
+    // clamp start
+    if (addr < 0) addr = 0
+    if (addr >= this.memory.byteLength) {
+      console.log(`${ANSI_BLUE}${fmt16(addr)}${ANSI_RESET}: <out of range>`)
+      return
+    }
+
+    // clamp length so we don’t overrun RAM
+    const maxLen = Math.min(length, this.memory.byteLength - addr)
+    const bytes = Array.from({ length: maxLen }, (_, i) =>
+      this.getByte(addr + i)
     )
 
     const hexCol = bytes
@@ -188,10 +236,17 @@ class CPU {
       `${ANSI_BLUE}${fmt16(addr)}${ANSI_RESET}: ${hexCol}  ${ANSI_DIM}|${asciiCol}|${ANSI_RESET}`
     )
   }
-
   private assertReg(idx: number) {
     if (idx < 0 || idx >= REGISTER_NAMES.length) {
       throw new Error(`Invalid register index ${idx}`)
+    }
+  }
+
+  private assertAddr(addr: number, width: number) {
+    if (addr < 0 || addr + width > this.memory.byteLength) {
+      throw new RangeError(
+        `Memory access out of range: addr=0x${addr.toString(16)} width=${width} (size=${this.memory.byteLength})`
+      )
     }
   }
 
@@ -203,6 +258,12 @@ class CPU {
   private writeReg(idx: number, value: number) {
     this.assertReg(idx)
     this.registers.setUint16(idx * 2, u16(value))
+  }
+
+  private push(value: number) {
+    const sp = this.readReg(regIndex('sp'))
+    this.setWord(sp, value)
+    this.writeReg(regIndex('sp'), sp - 2)
   }
 
   private readOperands<O extends Opcode>(opcode: O): OpcodeOperands[O] {
@@ -233,7 +294,7 @@ class CPU {
   private fetch(): number {
     const idx = regIndex('ip')
     const ip = this.readReg(idx)
-    const byte = this.memory.getUint8(ip)
+    const byte = this.getByte(ip)
     this.writeReg(idx, u16(ip + 1))
     return byte
   }
@@ -241,7 +302,7 @@ class CPU {
   private fetch16(): number {
     const idx = regIndex('ip')
     const ip = this.readReg(idx)
-    const word = this.memory.getUint16(ip)
+    const word = this.getWord(ip)
     this.writeReg(idx, u16(ip + 2))
     return word
   }
