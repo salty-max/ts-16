@@ -2,9 +2,9 @@ import { createMemory, type Memory } from './memory'
 import {
   INSTRUCTIONS,
   OPCODES,
-  type MapSchema,
   type OpcodeSchema,
   type OpcodeValue,
+  type OpTs,
   type OpType,
   type RegIndex,
 } from './instructions'
@@ -54,6 +54,14 @@ class CPU {
     return this.memory
   }
 
+  getIpIndex(): number {
+    return this.ipIndex
+  }
+
+  getAccIndex(): number {
+    return this.accIndex
+  }
+
   getRegister(name: RegName): number {
     return this.registers.getUint16(this.getOffset(name))
   }
@@ -63,43 +71,56 @@ class CPU {
   }
 
   execute<O extends OpcodeValue>(opcode: O) {
-    const def = INSTRUCTIONS[opcode]
-    const ops = this.readOperands(def.schema) as OpcodeSchema[O]
-
     switch (opcode) {
       case OPCODES.MOV_LIT_REG: {
-        // [opcode][lit_hi][lit_lo][dstReg]
-        const [lit16, dstReg] = ops
-        this.writeReg(dstReg, lit16)
+        // [opcode][lit_hi][lit_lo][dst]
+        const [lit, dst] = this.readOperands(OPCODES.MOV_LIT_REG)
+        this.writeReg(dst, lit)
         return
       }
       case OPCODES.MOV_REG_REG: {
-        // [opcode][srcReg][dstReg]
-        const [srcReg, dstReg] = ops
-        this.writeReg(dstReg, this.readReg(srcReg))
+        // [opcode][src][dst]
+        const [src, dst] = this.readOperands(OPCODES.MOV_REG_REG)
+        this.writeReg(dst, this.readReg(src))
         return
       }
       case OPCODES.MOV_REG_MEM: {
-        const [srcReg, addr16] = ops
-        this.memory.setUint16(addr16, this.readReg(srcReg))
+        // [opcode][src][addr_hi][addr_lo]
+        const [src, addr] = this.readOperands(OPCODES.MOV_REG_MEM)
+        this.memory.setUint16(addr, this.readReg(src))
         return
       }
       case OPCODES.MOV_MEM_REG: {
-        const [addr, dstReg] = ops
+        // [opcode][addr_hi][addr_lo][dst]
+        const [addr, dst] = this.readOperands(OPCODES.MOV_MEM_REG)
         const value = this.memory.getUint16(addr)
-        this.writeReg(dstReg, value)
+        this.writeReg(dst, value)
         return
       }
       case OPCODES.MOV_LIT_MEM: {
-        const [lit16, addr16] = ops
-        this.memory.setUint16(addr16, lit16)
+        // [opcode][lit_hi][lit_lo][addr_hi][addr_lo]
+        const [lit, addr] = this.readOperands(OPCODES.MOV_LIT_MEM)
+        this.memory.setUint16(addr, lit)
         return
       }
       case OPCODES.ADD_REG_REG: {
-        // [opcode][aReg][bReg] => acc
-        const [aReg, bReg] = ops
+        // [opcode][a_reg][b_reg] => acc
+        const [aReg, bReg] = this.readOperands(OPCODES.ADD_REG_REG)
         const sum = this.readReg(aReg) + this.readReg(bReg)
         this.writeReg(this.accIndex, sum)
+        return
+      }
+      case OPCODES.JMP_NOT_EQ: {
+        // [opcode][lit_hi][lit_lo][addr_hi][addr_lo]
+        const [lit, addr] = this.readOperands(OPCODES.JMP_NOT_EQ)
+        const value = this.readReg(this.accIndex)
+
+        if (lit !== value) {
+          this.writeReg(this.ipIndex, addr)
+        }
+        return
+      }
+      case OPCODES.NO_OP: {
         return
       }
     }
@@ -225,23 +246,36 @@ class CPU {
     this.registers.setUint16(idx * 2, u16(value))
   }
 
-  private readOperand(kind: OpType): number | RegIndex {
+  private readOperand<T extends OpType>(kind: T): OpTs<T> {
     switch (kind) {
       case 'reg':
-        return (this.fetch() % REGISTER_NAMES.length) as RegIndex
+        return (this.fetch() % REGISTER_NAMES.length) as RegIndex as OpTs<T>
       case 'lit8':
       case 'addr8':
-        return this.fetch()
+        return this.fetch() as OpTs<T>
       case 'lit16':
       case 'addr16':
-        return this.fetch16()
+        return this.fetch16() as OpTs<T>
     }
   }
 
-  private readOperands<S extends readonly OpType[]>(schema: S): MapSchema<S> {
-    const out: unknown[] = []
-    for (const kind of schema) out.push(this.readOperand(kind))
-    return out as MapSchema<S>
+  private readOperands<O extends OpcodeValue>(opcode: O): OpcodeSchema[O] {
+    const schema = INSTRUCTIONS[opcode].schema
+    if (schema.length === 0) {
+      // Exact empty tuple
+      return [] as OpcodeSchema[O]
+    }
+
+    // Mutable tuple during construction
+    const out = [] as unknown as {
+      -readonly [K in keyof OpcodeSchema[O]]: OpcodeSchema[O][K]
+    }
+
+    schema.forEach((kind, i) => {
+      out[i] = this.readOperand(kind) as OpcodeSchema[O][typeof i]
+    })
+
+    return out as OpcodeSchema[O]
   }
 
   private fetch(): number {
