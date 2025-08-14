@@ -1,6 +1,6 @@
-import { beforeEach, describe, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import CPU from '../src/cpu'
-import { OPCODES } from '../src/instructions'
+import { OPCODES, OPERAND_SIZES } from '../src/instructions'
 import {
   expectIPDelta,
   expectReg,
@@ -9,10 +9,15 @@ import {
   makeCPU,
   stepAndShow,
   word,
+  padTo,
+  expectAfterCallInvariant,
+  expectSavedRA,
 } from './helpers'
-import { regIndex } from '../src/util'
+import { fmt16, regIndex } from '../src/util'
 
 let cpu: CPU
+let RET_ADDR: number
+let FRAME_SZ_ADDR: number
 
 describe('NO_OP', () => {
   beforeEach(() => {
@@ -230,5 +235,187 @@ describe('JMP_NOT_EQ', () => {
     stepAndShow(cpu, 'JMP_NOT_EQ not taken')
     // MOV_LIT_REG (4 bytes) + JMP_NOT_EQ (1 + 2 + 2 = 5) => +9 total
     expectIPDelta(cpu, ip0, 9, 'JMP_NOT_EQ (not taken) should fall through')
+  })
+})
+
+describe('CAL_LIT @0x3000 / RET', () => {
+  beforeEach(() => {
+    cpu = makeCPU()
+  })
+
+  it('saves registers + RA, jumps to 0x3000, subroutine tweaks r1, RET restores and resumes at RA', () => {
+    const main = [
+      OPCODES.MOV_LIT_REG,
+      ...word(0x5555),
+      regIndex('r1'),
+      OPCODES.PSH_LIT,
+      ...word(0x0000),
+      OPCODES.CAL_LIT,
+      ...word(0x3000),
+      OPCODES.NO_OP,
+    ]
+
+    const sub = [
+      OPCODES.MOV_LIT_REG,
+      ...word(0xaaaa),
+      regIndex('r1'),
+      OPCODES.RET,
+    ]
+
+    loadProgram(cpu, [...main, ...padTo(0x3000, main.length), ...sub])
+
+    stepAndShow(cpu, 'MOV_LIT_REG r1=0x5555')
+    stepAndShow(cpu, 'PSH_LIT args')
+
+    const ipBeforeCall = cpu.getRegister('ip')
+
+    stepAndShow(cpu, 'CAL_LIT 0x3000')
+
+    expectAfterCallInvariant(cpu)
+    expectSavedRA(cpu, ipBeforeCall + 3)
+    // IP jumped to subroutine
+    expectReg(cpu, 'ip', 0x3000)
+
+    stepAndShow(cpu, 'MOV_LIT_REG r1=0xAAAA')
+    expectReg(cpu, 'r1', 0xaaaa, 'subroutine should update r1')
+    stepAndShow(cpu, 'RET')
+
+    expectReg(cpu, 'ip', ipBeforeCall + 3)
+    expectReg(cpu, 'r1', 0x5555)
+  })
+})
+
+describe('CAL_REG (r2=0x3000) / RET (save/restore full frame)', () => {
+  beforeEach(() => {
+    cpu = makeCPU()
+  })
+
+  it('jumps via register to 0x3000 and restores caller state on RET', () => {
+    const main = [
+      OPCODES.MOV_LIT_REG,
+      ...word(0x3000),
+      regIndex('r2'),
+      OPCODES.MOV_LIT_REG,
+      ...word(0xdead),
+      regIndex('r3'),
+      OPCODES.PSH_LIT,
+      ...word(0x0000),
+      OPCODES.CAL_REG,
+      regIndex('r2'),
+      OPCODES.NO_OP,
+    ]
+
+    const sub = [
+      OPCODES.MOV_LIT_REG,
+      ...word(0xbeef),
+      regIndex('r3'),
+      OPCODES.RET,
+    ]
+
+    loadProgram(cpu, [...main, ...padTo(0x3000, main.length), ...sub])
+
+    stepAndShow(cpu, 'MOV_LIT_REG r2=0x3000')
+    stepAndShow(cpu, 'MOV_LIT_REG r3=0xDEAD')
+    stepAndShow(cpu, 'PSH_LIT args')
+
+    const ipBeforeCall = cpu.getRegister('ip')
+
+    stepAndShow(cpu, 'CAL_REG r2')
+
+    expectAfterCallInvariant(cpu)
+    expectSavedRA(cpu, ipBeforeCall + 2)
+    // IP jumped to subroutine
+    expectReg(cpu, 'ip', 0x3000)
+
+    stepAndShow(cpu, 'MOV_LIT_REG r3=0xBEEF')
+    expectReg(cpu, 'r3', 0xbeef)
+    stepAndShow(cpu, 'RET')
+
+    expectReg(cpu, 'ip', ipBeforeCall + 2)
+    expectReg(cpu, 'r3', 0xdead)
+  })
+})
+
+describe('Full program with args + subroutine pushes', () => {
+  let RET_ADDR: number
+
+  beforeEach(() => {
+    cpu = makeCPU()
+  })
+
+  it('runs main + subroutine exactly as in diagram', () => {
+    const main = [
+      OPCODES.PSH_LIT,
+      ...word(0x3333),
+      OPCODES.PSH_LIT,
+      ...word(0x2222),
+      OPCODES.PSH_LIT,
+      ...word(0x1111),
+      OPCODES.MOV_LIT_REG,
+      ...word(0x1234),
+      regIndex('r1'),
+      OPCODES.MOV_LIT_REG,
+      ...word(0x5678),
+      regIndex('r4'),
+      OPCODES.PSH_LIT,
+      ...word(0x0000),
+      OPCODES.CAL_LIT,
+      ...word(0x3000),
+      OPCODES.PSH_LIT,
+      ...word(0x4444),
+    ]
+
+    const sub = [
+      OPCODES.PSH_LIT,
+      ...word(0x0102),
+      OPCODES.PSH_LIT,
+      ...word(0x0304),
+      OPCODES.PSH_LIT,
+      ...word(0x0506),
+      OPCODES.MOV_LIT_REG,
+      ...word(0x0708),
+      regIndex('r1'),
+      OPCODES.MOV_LIT_REG,
+      ...word(0x090a),
+      regIndex('r8'),
+      OPCODES.RET,
+    ]
+
+    loadProgram(cpu, [...main, ...padTo(0x3000, main.length), ...sub])
+
+    stepAndShow(cpu, 'PSH_LIT 0x3333')
+    stepAndShow(cpu, 'PSH_LIT 0x2222')
+    stepAndShow(cpu, 'PSH_LIT 0x1111')
+    stepAndShow(cpu, 'MOV_LIT_REG 0x1234 -> r1')
+    expectReg(cpu, 'r1', 0x1234)
+    stepAndShow(cpu, 'MOV_LIT_REG 0x5678 -> r4')
+    expectReg(cpu, 'r4', 0x5678)
+    stepAndShow(cpu, 'PSH_LIT args')
+
+    const ipBeforeCall = cpu.getRegister('ip')
+
+    stepAndShow(cpu, 'CAL_LIT 0x3000')
+
+    expectAfterCallInvariant(cpu)
+    expectSavedRA(cpu, ipBeforeCall + 3)
+    // IP jumped to subroutine
+    expectReg(cpu, 'ip', 0x3000)
+
+    stepAndShow(cpu, 'PSH_LIT 0x0102')
+    stepAndShow(cpu, 'PSH_LIT 0x0304')
+    stepAndShow(cpu, 'PSH_LIT 0x0506')
+    stepAndShow(cpu, 'MOV_LIT_REG 0x0708 -> r1')
+    expectReg(cpu, 'r1', 0x0708)
+    stepAndShow(cpu, 'MOV_LIT_REG 0x090A -> r8')
+    expectReg(cpu, 'r8', 0x090a)
+
+    // Return to main
+    stepAndShow(cpu, 'RET')
+    expectReg(cpu, 'ip', ipBeforeCall + 3)
+    expectReg(cpu, 'r1', 0x1234) // restored
+    expectReg(cpu, 'r8', 0x0000) // restored
+
+    // Final instruction in main
+    stepAndShow(cpu, 'PSH_LIT 0x4444')
   })
 })

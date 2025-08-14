@@ -17,17 +17,17 @@ import {
   ANSI_BLUE,
 } from './util/logger'
 import { u16 } from './util'
-import { SHA224 } from 'bun'
 
 class CPU {
   private memory: Memory
   private prevRegisters: Record<RegName, number>
   private registers: Memory
+  private stackFrameSize: number
 
   constructor(memory: Memory) {
     this.memory = memory
     this.registers = createMemory(REGISTER_NAMES.length * 2)
-
+    this.stackFrameSize = 0
     this.writeReg(regIndex('sp'), memory.byteLength - 1 - 1)
     this.writeReg(regIndex('fp'), memory.byteLength - 1 - 1)
 
@@ -109,9 +109,7 @@ class CPU {
       }
       case OPCODES.POP: {
         const [dst] = this.readOperands(OPCODES.POP)
-        const nextSP = this.readReg(regIndex('sp')) + 2
-        this.writeReg(regIndex('sp'), nextSP)
-        const value = this.getWord(nextSP)
+        const value = this.pop()
         this.writeReg(dst, value)
         return
       }
@@ -129,6 +127,23 @@ class CPU {
         }
         return
       }
+      case OPCODES.CAL_LIT: {
+        const [addr] = this.readOperands(OPCODES.CAL_LIT)
+        this.pushState()
+        this.writeReg(regIndex('ip'), addr)
+        return
+      }
+      case OPCODES.CAL_REG: {
+        const [src] = this.readOperands(OPCODES.CAL_REG)
+        const addr = this.readReg(src)
+        this.pushState()
+        this.writeReg(regIndex('ip'), addr)
+        return
+      }
+      case OPCODES.RET: {
+        this.popState()
+        return
+      }
       case OPCODES.NO_OP: {
         return
       }
@@ -136,7 +151,7 @@ class CPU {
   }
 
   step() {
-    const opcode = this.fetch() as Opcode
+    const opcode = this.fetchByte() as Opcode
     this.execute(opcode)
   }
 
@@ -245,7 +260,7 @@ class CPU {
   private assertAddr(addr: number, width: number) {
     if (addr < 0 || addr + width > this.memory.byteLength) {
       throw new RangeError(
-        `Memory access out of range: addr=0x${addr.toString(16)} width=${width} (size=${this.memory.byteLength})`
+        `Memory access out of range: addr=${fmt16(addr)} width=${width} (size=${this.memory.byteLength})`
       )
     }
   }
@@ -261,9 +276,59 @@ class CPU {
   }
 
   private push(value: number) {
-    const sp = this.readReg(regIndex('sp'))
-    this.setWord(sp, value)
-    this.writeReg(regIndex('sp'), sp - 2)
+    const spAddr = this.readReg(regIndex('sp'))
+    this.setWord(spAddr, value)
+    this.writeReg(regIndex('sp'), spAddr - 2)
+    this.stackFrameSize += 2
+  }
+
+  private pop(): number {
+    const nextSpAddr = this.readReg(regIndex('sp')) + 2
+    this.writeReg(regIndex('sp'), nextSpAddr)
+    this.stackFrameSize -= 2
+    return this.getWord(nextSpAddr)
+  }
+
+  private pushState() {
+    // Save registers
+    for (let i = 0; i < 8; i++) {
+      this.push(this.readReg(regIndex(`r${i + 1}` as RegName)))
+    }
+
+    // Save return address
+    this.push(this.readReg(regIndex('ip')))
+
+    // Push stack frame size
+    this.push(this.stackFrameSize + 2)
+
+    // Update frame pointer and reset local pointer
+    this.writeReg(regIndex('fp'), this.readReg(regIndex('sp')))
+    this.stackFrameSize = 0
+  }
+
+  private popState() {
+    // Restore stack pointer to frame base
+    const fpAddr = this.readReg(regIndex('fp'))
+    this.writeReg(regIndex('sp'), fpAddr)
+
+    // Pop saved frame size
+    this.stackFrameSize = this.pop()
+    const frameSize = this.stackFrameSize
+
+    // Pop return address and jump back
+    this.writeReg(regIndex('ip'), this.pop())
+
+    // Restore registers
+    for (let i = 8; i > 0; i--) {
+      this.writeReg(regIndex(`r${i}` as RegName), this.pop())
+    }
+
+    const nArgs = this.pop()
+    for (let i = 0; i < nArgs; i++) {
+      this.pop()
+    }
+
+    this.writeReg(regIndex('fp'), fpAddr + frameSize)
   }
 
   private readOperands<O extends Opcode>(opcode: O): OpcodeOperands[O] {
@@ -276,35 +341,43 @@ class CPU {
 
     schema.forEach((kind, i) => {
       let val: number
-      if (kind === 'reg') {
-        val = this.fetch() % REGISTER_NAMES.length
-        out[i] = val as OpcodeOperands[O][typeof i]
-      } else if (kind === 'lit16' || kind === 'addr16') {
-        val = this.fetch16()
-        out[i] = val as OpcodeOperands[O][typeof i]
-      } else {
-        val = this.fetch()
-        out[i] = val as OpcodeOperands[O][typeof i]
+      switch (kind) {
+        case 'reg': {
+          val = this.fetchByte() % REGISTER_NAMES.length
+          out[i] = val as OpcodeOperands[O][typeof i]
+          break
+        }
+        case 'lit16':
+        case 'addr16': {
+          val = this.fetchWord()
+          out[i] = val as OpcodeOperands[O][typeof i]
+          break
+        }
+        default: {
+          val = this.fetchByte()
+          out[i] = val as OpcodeOperands[O][typeof i]
+          break
+        }
       }
     })
 
     return out as OpcodeOperands[O]
   }
 
-  private fetch(): number {
-    const idx = regIndex('ip')
-    const ip = this.readReg(idx)
-    const byte = this.getByte(ip)
-    this.writeReg(idx, u16(ip + 1))
-    return byte
+  private fetchByte(): number {
+    const ipIdx = regIndex('ip')
+    const nextInstrAddr = this.readReg(ipIdx)
+    const instr = this.getByte(nextInstrAddr)
+    this.writeReg(ipIdx, nextInstrAddr + 1)
+    return instr
   }
 
-  private fetch16(): number {
-    const idx = regIndex('ip')
-    const ip = this.readReg(idx)
-    const word = this.getWord(ip)
-    this.writeReg(idx, u16(ip + 2))
-    return word
+  private fetchWord(): number {
+    const ipIdx = regIndex('ip')
+    const nextInstrAddr = this.readReg(ipIdx)
+    const instr = this.getWord(nextInstrAddr)
+    this.writeReg(ipIdx, nextInstrAddr + 2)
+    return instr
   }
 }
 
