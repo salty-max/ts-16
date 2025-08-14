@@ -33,6 +33,7 @@ const defs = [
   { code: 0x5e, name: 'CAL_LIT', schema: ['addr16'] as const },
   { code: 0x5f, name: 'CAL_REG', schema: ['reg'] as const },
   { code: 0x60, name: 'RET', schema: [] as const },
+  { code: 0xff, name: 'HLT', schema: [] as const },
 ] as const
 
 export type OpcodeDef = (typeof defs)[number]

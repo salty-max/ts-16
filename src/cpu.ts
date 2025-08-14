@@ -17,19 +17,20 @@ import {
   ANSI_BLUE,
 } from './util/logger'
 import { u16 } from './util'
+import type MemoryMapper from './memory-mapper'
 
 class CPU {
-  private memory: Memory
+  private memory: MemoryMapper
   private prevRegisters: Record<RegName, number>
   private registers: Memory
   private stackFrameSize: number
 
-  constructor(memory: Memory) {
+  constructor(memory: MemoryMapper) {
     this.memory = memory
     this.registers = createMemory(REGISTER_NAMES.length * 2)
     this.stackFrameSize = 0
-    this.writeReg(regIndex('sp'), memory.byteLength - 1 - 1)
-    this.writeReg(regIndex('fp'), memory.byteLength - 1 - 1)
+    this.writeReg(regIndex('sp'), memory.byteLength - 2)
+    this.writeReg(regIndex('fp'), memory.byteLength - 2)
 
     // Snapshot the initial registers values
     this.prevRegisters = Object.fromEntries(
@@ -37,7 +38,7 @@ class CPU {
     ) as Record<RegName, number>
   }
 
-  getMemory(): Memory {
+  getMemory(): MemoryMapper {
     return this.memory
   }
 
@@ -69,7 +70,7 @@ class CPU {
     this.memory.setUint16(addr, u16(value))
   }
 
-  execute<O extends Opcode>(opcode: O) {
+  execute<O extends Opcode>(opcode: O): boolean | void {
     switch (opcode) {
       case OPCODES.MOV_LIT_REG: {
         const [lit, dst] = this.readOperands(OPCODES.MOV_LIT_REG)
@@ -147,12 +148,22 @@ class CPU {
       case OPCODES.NO_OP: {
         return
       }
+      case OPCODES.HLT: {
+        return true
+      }
     }
   }
 
-  step() {
+  step(): boolean {
     const opcode = this.fetchByte() as Opcode
-    this.execute(opcode)
+    return Boolean(this.execute(opcode))
+  }
+
+  run() {
+    const halt = this.step()
+    if (!halt) {
+      setImmediate(() => this.run())
+    }
   }
 
   debug(opts: { diffOnly?: boolean; arrows?: boolean } = {}) {
