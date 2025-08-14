@@ -99,11 +99,9 @@ describe('CPU ▸ Registers', () => {
 
   it('rejects invalid register index', () => {
     const bad = REGISTER_NAMES.length
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => (cpu as any).writeReg(bad, 0x1234)).toThrow(
       /invalid register/i
     )
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => (cpu as any).readReg(bad)).toThrow(/invalid register/i)
   })
 })
