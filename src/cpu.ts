@@ -50,22 +50,22 @@ class CPU {
     this.writeReg(regIndex(name), value)
   }
 
-  getByte(addr: number): number {
+  readByte(addr: number): number {
     this.assertAddr(addr, 1)
     return this.memory.getUint8(addr)
   }
 
-  setByte(addr: number, value: number) {
+  writeByte(addr: number, value: number) {
     this.assertAddr(addr, 1)
     this.memory.setUint8(addr, value & 0xff)
   }
 
-  getWord(addr: number): number {
+  readWord(addr: number): number {
     this.assertAddr(addr, 2)
     return this.memory.getUint16(addr)
   }
 
-  setWord(addr: number, value: number) {
+  writeWord(addr: number, value: number) {
     this.assertAddr(addr, 2)
     this.memory.setUint16(addr, u16(value))
   }
@@ -84,18 +84,32 @@ class CPU {
       }
       case OPCODES.MOV_REG_MEM: {
         const [src, addr] = this.readOperands(OPCODES.MOV_REG_MEM)
-        this.setWord(addr, this.readReg(src))
+        this.writeWord(addr, this.readReg(src))
         return
       }
       case OPCODES.MOV_MEM_REG: {
         const [addr, dst] = this.readOperands(OPCODES.MOV_MEM_REG)
-        const value = this.getWord(addr)
+        const value = this.readWord(addr)
         this.writeReg(dst, value)
         return
       }
       case OPCODES.MOV_LIT_MEM: {
         const [lit, addr] = this.readOperands(OPCODES.MOV_LIT_MEM)
-        this.setWord(addr, lit)
+        this.writeWord(addr, lit)
+        return
+      }
+      case OPCODES.MOV_REG_PTR_REG: {
+        const [src, dst] = this.readOperands(OPCODES.MOV_REG_PTR_REG)
+        const ptr = this.readReg(src)
+        const value = this.readWord(ptr)
+        this.writeReg(dst, value)
+        return
+      }
+      case OPCODES.MOV_LIT_OFF_REG: {
+        const [addr, src, dst] = this.readOperands(OPCODES.MOV_LIT_OFF_REG)
+        const offset = this.readReg(src)
+        const value = this.readWord(addr + offset)
+        this.writeReg(dst, value)
         return
       }
       case OPCODES.PSH_LIT: {
@@ -114,10 +128,58 @@ class CPU {
         this.writeReg(dst, value)
         return
       }
+      case OPCODES.ADD_LIT_REG: {
+        const [lit, reg] = this.readOperands(OPCODES.ADD_LIT_REG)
+        const value = lit + this.readReg(reg)
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
       case OPCODES.ADD_REG_REG: {
         const [aReg, bReg] = this.readOperands(OPCODES.ADD_REG_REG)
-        const sum = this.readReg(aReg) + this.readReg(bReg)
-        this.writeReg(regIndex('acc'), sum)
+        const value = this.readReg(aReg) + this.readReg(bReg)
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
+      case OPCODES.SUB_LIT_REG: {
+        const [lit, reg] = this.readOperands(OPCODES.SUB_LIT_REG)
+        const value = lit - this.readReg(reg)
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
+      case OPCODES.SUB_REG_LIT: {
+        const [reg, lit] = this.readOperands(OPCODES.SUB_REG_LIT)
+        const value = this.readReg(reg) - lit
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
+      case OPCODES.SUB_REG_REG: {
+        const [aReg, bReg] = this.readOperands(OPCODES.SUB_REG_REG)
+        const value = this.readReg(aReg) - this.readReg(bReg)
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
+      case OPCODES.MUL_LIT_REG: {
+        const [lit, reg] = this.readOperands(OPCODES.MUL_LIT_REG)
+        const value = lit * this.readReg(reg)
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
+      case OPCODES.MUL_REG_REG: {
+        const [aReg, bReg] = this.readOperands(OPCODES.MUL_REG_REG)
+        const value = this.readReg(aReg) * this.readReg(bReg)
+        this.writeReg(regIndex('acc'), value)
+        return
+      }
+      case OPCODES.INC_REG: {
+        const [reg] = this.readOperands(OPCODES.INC_REG)
+        const old = this.readReg(reg)
+        this.writeReg(reg, old + 1)
+        return
+      }
+      case OPCODES.DEC_REG: {
+        const [reg] = this.readOperands(OPCODES.DEC_REG)
+        const old = this.readReg(reg)
+        this.writeReg(reg, old - 1)
         return
       }
       case OPCODES.JMP_NOT_EQ: {
@@ -243,7 +305,7 @@ class CPU {
     // clamp length so we don’t overrun RAM
     const maxLen = Math.min(length, this.memory.byteLength - addr)
     const bytes = Array.from({ length: maxLen }, (_, i) =>
-      this.getByte(addr + i)
+      this.readByte(addr + i)
     )
 
     const hexCol = bytes
@@ -288,7 +350,7 @@ class CPU {
 
   private push(value: number) {
     const spAddr = this.readReg(regIndex('sp'))
-    this.setWord(spAddr, value)
+    this.writeWord(spAddr, value)
     this.writeReg(regIndex('sp'), spAddr - 2)
     this.stackFrameSize += 2
   }
@@ -297,7 +359,7 @@ class CPU {
     const nextSpAddr = this.readReg(regIndex('sp')) + 2
     this.writeReg(regIndex('sp'), nextSpAddr)
     this.stackFrameSize -= 2
-    return this.getWord(nextSpAddr)
+    return this.readWord(nextSpAddr)
   }
 
   private pushState() {
@@ -378,7 +440,7 @@ class CPU {
   private fetchByte(): number {
     const ipIdx = regIndex('ip')
     const nextInstrAddr = this.readReg(ipIdx)
-    const instr = this.getByte(nextInstrAddr)
+    const instr = this.readByte(nextInstrAddr)
     this.writeReg(ipIdx, nextInstrAddr + 1)
     return instr
   }
@@ -386,7 +448,7 @@ class CPU {
   private fetchWord(): number {
     const ipIdx = regIndex('ip')
     const nextInstrAddr = this.readReg(ipIdx)
-    const instr = this.getWord(nextInstrAddr)
+    const instr = this.readWord(nextInstrAddr)
     this.writeReg(ipIdx, nextInstrAddr + 2)
     return instr
   }

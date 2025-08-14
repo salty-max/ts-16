@@ -1,4 +1,3 @@
-// __tests__/cpu.spec.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
 import CPU from '../src/cpu'
 import { OPCODES } from '../src/instructions'
@@ -44,17 +43,17 @@ describe('CPU ▸ Memory & Bounds', () => {
   it('maps full RAM and can RW first/last addresses', () => {
     cpu = makeCPU(0x10000)
     // first
-    cpu.setByte(0x0000, 0x12)
-    expect(cpu.getByte(0x0000)).toBe(0x12)
+    cpu.writeByte(0x0000, 0x12)
+    expect(cpu.readByte(0x0000)).toBe(0x12)
     // last
-    cpu.setByte(0xffff, 0x34)
-    expect(cpu.getByte(0xffff)).toBe(0x34)
+    cpu.writeByte(0xffff, 0x34)
+    expect(cpu.readByte(0xffff)).toBe(0x34)
   })
 
   it('throws on unmapped address', () => {
     cpu = makeCPU(0x100)
-    expect(() => cpu.getByte(0x100)).toThrow(/No memory region|out of range/i)
-    expect(() => cpu.setByte(0x100, 0)).toThrow(
+    expect(() => cpu.readByte(0x100)).toThrow(/No memory region|out of range/i)
+    expect(() => cpu.writeByte(0x100, 0)).toThrow(
       /No memory region|out of range/i
     )
   })
@@ -62,8 +61,10 @@ describe('CPU ▸ Memory & Bounds', () => {
   it('throws when reading/writing word that crosses the end of RAM', () => {
     cpu = makeCPU(0x10000)
     const end = 0x10000
-    expect(() => cpu.getWord(end - 1)).toThrow(/out of range|width=2/i)
-    expect(() => cpu.setWord(end - 1, 0x1234)).toThrow(/out of range|width=2/i)
+    expect(() => cpu.readWord(end - 1)).toThrow(/out of range|width=2/i)
+    expect(() => cpu.writeWord(end - 1, 0x1234)).toThrow(
+      /out of range|width=2/i
+    )
   })
 })
 
@@ -291,8 +292,65 @@ describe('CPU ▸ Instructions', () => {
     })
   })
 
-  describe('ADD_REG_REG', () => {
-    it('adds two registers and stores in ACC', () => {
+  describe('MOV_REG_PTR_REG / MOV_LIT_OFF_REG', () => {
+    it('MOV_REG_PTR_REG: loads [ptr] into dst', () => {
+      loadProgram(cpu, [
+        // mem[0x4000] = 0x1337
+        OPCODES.MOV_LIT_MEM,
+        ...word(0x1337),
+        ...word(0x4000),
+        // r2 = 0x4000; r3 <- [r2]
+        OPCODES.MOV_LIT_REG,
+        ...word(0x4000),
+        regIndex('r2'),
+        OPCODES.MOV_REG_PTR_REG,
+        regIndex('r2'),
+        regIndex('r3'),
+      ])
+      stepAndShow(cpu) // mov_lit_mem
+      stepAndShow(cpu) // mov_lit_reg
+      stepAndShow(cpu) // mov_reg_ptr_reg
+      expectReg(cpu, 'r3', 0x1337)
+    })
+
+    it('MOV_LIT_OFF_REG: loads [addr + offset(reg)] into dst', () => {
+      loadProgram(cpu, [
+        // mem[0x2002] = 0xBEEF
+        OPCODES.MOV_LIT_MEM,
+        ...word(0xbeef),
+        ...word(0x2002),
+        // r1 = 0x0002; r4 <- [0x2000 + r1]
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0002),
+        regIndex('r1'),
+        OPCODES.MOV_LIT_OFF_REG,
+        ...word(0x2000),
+        regIndex('r1'),
+        regIndex('r4'),
+      ])
+      stepAndShow(cpu) // mov_lit_mem
+      stepAndShow(cpu) // mov_lit_reg
+      stepAndShow(cpu) // mov_lit_off_reg
+      expectReg(cpu, 'r4', 0xbeef)
+    })
+  })
+
+  describe('ADD_*', () => {
+    it('ADD_LIT_REG adds literal + register into ACC', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0004),
+        regIndex('r3'),
+        OPCODES.ADD_LIT_REG,
+        ...word(0x0006),
+        regIndex('r3'),
+      ])
+      stepAndShow(cpu) // mov
+      stepAndShow(cpu) // add
+      expectReg(cpu, 'acc', 0x000a)
+      expectReg(cpu, 'r3', 0x0004)
+    })
+    it('ADD_REG_REG adds two registers and stores in ACC', () => {
       loadProgram(cpu, [
         OPCODES.MOV_LIT_REG,
         ...word(0x0002),
@@ -308,6 +366,116 @@ describe('CPU ▸ Instructions', () => {
       stepAndShow(cpu)
       stepAndShow(cpu)
       expectReg(cpu, 'acc', 5)
+    })
+  })
+
+  describe('SUB_*', () => {
+    it('SUB_LIT_REG substracts register from literal and stores in ACC', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0003),
+        regIndex('r2'),
+        OPCODES.SUB_LIT_REG,
+        ...word(0x000a),
+        regIndex('r2'),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'acc', 0x0007)
+    })
+
+    it('SUB_REG_LIT substracts literal from register and stores in ACC', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x000a),
+        regIndex('r2'),
+        OPCODES.SUB_REG_LIT,
+        regIndex('r2'),
+        ...word(0x0003),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'acc', 0x0007)
+    })
+
+    it('SUB_REG_REG substracts register from register and stores in ACC', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0009),
+        regIndex('r1'),
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0004),
+        regIndex('r2'),
+        OPCODES.SUB_REG_REG,
+        regIndex('r1'),
+        regIndex('r2'),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'acc', 0x0005)
+    })
+  })
+
+  describe('MUL_*', () => {
+    it('MUL_LIT_REG multiplies literal and register and stores in ACC', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0006),
+        regIndex('r4'),
+        OPCODES.MUL_LIT_REG,
+        ...word(0x0007),
+        regIndex('r4'),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'acc', 0x002a) // 42
+    })
+
+    it('MUL_REG_REG multiplies two registers and stores in ACC', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0003),
+        regIndex('r5'),
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0005),
+        regIndex('r6'),
+        OPCODES.MUL_REG_REG,
+        regIndex('r5'),
+        regIndex('r6'),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'acc', 0x000f) // 15
+    })
+  })
+
+  describe('INC_REG / DEC_REG', () => {
+    it('INC_REG increments target register', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0001),
+        regIndex('r1'),
+        OPCODES.INC_REG,
+        regIndex('r1'),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'r1', 0x0002)
+    })
+
+    it('DEC_REG decrements target register', () => {
+      loadProgram(cpu, [
+        OPCODES.MOV_LIT_REG,
+        ...word(0x0005),
+        regIndex('r1'),
+        OPCODES.DEC_REG,
+        regIndex('r1'),
+      ])
+      stepAndShow(cpu)
+      stepAndShow(cpu)
+      expectReg(cpu, 'r1', 0x0004)
     })
   })
 

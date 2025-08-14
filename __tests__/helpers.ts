@@ -118,7 +118,7 @@ export function expectReg(cpu: CPU, reg: RegName, toBe: number, ctx?: string) {
 
 export function expectMem(cpu: CPU, addr: number, toBe: number, ctx?: string) {
   try {
-    const got = cpu.getWord(addr)
+    const got = cpu.readWord(addr)
     expect(got).toBe(toBe)
   } catch (e) {
     // Show a small memory window centered on addr (clamped at 0)
