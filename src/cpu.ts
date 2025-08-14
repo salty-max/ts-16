@@ -458,12 +458,80 @@ export const HANDLERS: {
   },
 
   // control flow / calls
-  [OPCODES.JMP_NOT_EQ]: (cpu) => {
-    const [lit, addr] = cpu.readOperands(OPCODES.JMP_NOT_EQ)
+  [OPCODES.JEQ_REG]: (cpu) => {
+    const [reg, addr] = cpu.readOperands(OPCODES.JEQ_REG)
+    if (cpu.readReg(reg) === cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JEQ_LIT]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JEQ_LIT)
+    if (lit === cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JNE_REG]: (cpu) => {
+    const [reg, addr] = cpu.readOperands(OPCODES.JNE_REG)
+    if (cpu.readReg(reg) !== cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JNE_LIT]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JNE_LIT)
     if (lit !== cpu.readReg(regIndex('acc'))) {
       cpu.writeReg(regIndex('ip'), addr)
     }
   },
+  [OPCODES.JLT_REG]: (cpu) => {
+    const [reg, addr] = cpu.readOperands(OPCODES.JLT_REG)
+    if (cpu.readReg(reg) < cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JLT_LIT]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JLT_LIT)
+    if (lit < cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JGT_REG]: (cpu) => {
+    const [reg, addr] = cpu.readOperands(OPCODES.JGT_REG)
+    if (cpu.readReg(reg) > cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JGT_LIT]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JGT_LIT)
+    if (lit > cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JLE_REG]: (cpu) => {
+    const [reg, addr] = cpu.readOperands(OPCODES.JLE_REG)
+    if (cpu.readReg(reg) <= cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JLE_LIT]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JLE_LIT)
+    if (lit <= cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JGE_REG]: (cpu) => {
+    const [reg, addr] = cpu.readOperands(OPCODES.JGE_REG)
+    if (cpu.readReg(reg) >= cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.JGE_LIT]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JGE_LIT)
+    if (lit >= cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+
+  // subroutines
   [OPCODES.CAL_LIT]: (cpu) => {
     const [addr] = cpu.readOperands(OPCODES.CAL_LIT)
     cpu.pushState()

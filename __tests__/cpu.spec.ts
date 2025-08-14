@@ -702,13 +702,121 @@ describe('CPU ▸ Instructions', () => {
   })
 
   describe('Branching', () => {
-    describe('JMP_NOT_EQ', () => {
+    describe('JEQ_REG', () => {
+      it('jumps when reg == ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x1234),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x1234),
+          regIndex('r1'),
+          OPCODES.JEQ_REG,
+          regIndex('r1'),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when reg != ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x1234),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x9999),
+          regIndex('r1'),
+          OPCODES.JEQ_REG,
+          regIndex('r1'),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 4 + 4 + 4) // two MOVs + JEQ_REG
+      })
+    })
+
+    describe('JEQ_LIT', () => {
+      it('jumps when lit == ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0xbeef),
+          regIndex('acc'),
+          OPCODES.JEQ_LIT,
+          ...word(0xbeef),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when lit != ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0xbeef),
+          regIndex('acc'),
+          OPCODES.JEQ_LIT,
+          ...word(0xbee0),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 4 + 5) // MOV + JEQ_LIT
+      })
+    })
+
+    describe('JNE_REG', () => {
+      it('jumps when reg != ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0006),
+          regIndex('r2'),
+          OPCODES.JNE_REG,
+          regIndex('r2'),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when reg == ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('r2'),
+          OPCODES.JNE_REG,
+          regIndex('r2'),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 12) // 4 + 4 + 4
+      })
+    })
+    describe('JNE_LIT', () => {
       it('jumps when ACC != literal', () => {
         loadProgram(cpu, [
           OPCODES.MOV_LIT_REG,
           ...word(0x0001),
           regIndex('acc'),
-          OPCODES.JMP_NOT_EQ,
+          OPCODES.JNE_LIT,
           ...word(0x0002),
           ...word(0x0100),
         ])
@@ -722,7 +830,7 @@ describe('CPU ▸ Instructions', () => {
           OPCODES.MOV_LIT_REG,
           ...word(0x0002),
           regIndex('acc'),
-          OPCODES.JMP_NOT_EQ,
+          OPCODES.JNE_LIT,
           ...word(0x0002),
           ...word(0x0100),
         ])
@@ -730,6 +838,286 @@ describe('CPU ▸ Instructions', () => {
         stepAndShow(cpu)
         stepAndShow(cpu)
         expectReg(cpu, 'ip', ip0 + 9) // opcode + lit + addr
+      })
+    })
+
+    describe('JLT_LIT', () => {
+      it('jumps when lit < ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JLT_LIT,
+          ...word(0x0004),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when lit >= ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JLT_LIT,
+          ...word(0x0006),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 9) // 4 + 5
+      })
+    })
+
+    describe('JLT_REG', () => {
+      it('jumps when reg < ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0007),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0006),
+          regIndex('r3'),
+          OPCODES.JLT_REG,
+          regIndex('r3'),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when reg >= ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0007),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0008),
+          regIndex('r3'),
+          OPCODES.JLT_REG,
+          regIndex('r3'),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 12) // 4 + 4 + 4
+      })
+    })
+
+    describe('JGT_LIT', () => {
+      it('jumps when lit > ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JGT_LIT,
+          ...word(0x0006),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when lit <= ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JGT_LIT,
+          ...word(0x0004),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 9) // 4 + 5
+      })
+    })
+
+    describe('JGT_REG', () => {
+      it('jumps when reg > ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0006),
+          regIndex('r4'),
+          OPCODES.JGT_REG,
+          regIndex('r4'),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when reg <= ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0004),
+          regIndex('r4'),
+          OPCODES.JGT_REG,
+          regIndex('r4'),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 12) // 4 + 4 + 4
+      })
+    })
+
+    describe('JLE_LIT', () => {
+      it('jumps when lit <= ACC (boundary equal)', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JLE_LIT,
+          ...word(0x0005),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when lit > ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JLE_LIT,
+          ...word(0x0006),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 9) // 4 + 5
+      })
+    })
+
+    describe('JLE_REG', () => {
+      it('jumps when reg <= ACC (boundary equal)', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('r5'),
+          OPCODES.JLE_REG,
+          regIndex('r5'),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when reg > ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0006),
+          regIndex('r5'),
+          OPCODES.JLE_REG,
+          regIndex('r5'),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 12) // 4 + 4 + 4
+      })
+    })
+
+    describe('JGE_LIT', () => {
+      it('jumps when lit >= ACC (boundary equal)', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JGE_LIT,
+          ...word(0x0005),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when lit < ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.JGE_LIT,
+          ...word(0x0004),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 9) // 4 + 5
+      })
+    })
+
+    describe('JGE_REG', () => {
+      it('jumps when reg >= ACC (boundary equal)', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('r6'),
+          OPCODES.JGE_REG,
+          regIndex('r6'),
+          ...word(0x0100),
+        ])
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', 0x0100)
+      })
+
+      it('does not jump when reg < ACC', () => {
+        loadProgram(cpu, [
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0005),
+          regIndex('acc'),
+          OPCODES.MOV_LIT_REG,
+          ...word(0x0004),
+          regIndex('r6'),
+          OPCODES.JGE_REG,
+          regIndex('r6'),
+          ...word(0x0100),
+        ])
+        const ip0 = cpu.getRegister('ip')
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        stepAndShow(cpu)
+        expectReg(cpu, 'ip', ip0 + 12) // 4 + 4 + 4
       })
     })
   })
