@@ -70,150 +70,10 @@ class CPU {
     this.memory.setUint16(addr, u16(value))
   }
 
-  execute<O extends Opcode>(opcode: O): boolean | void {
-    switch (opcode) {
-      case OPCODES.MOV_LIT_REG: {
-        const [lit, dst] = this.readOperands(OPCODES.MOV_LIT_REG)
-        this.writeReg(dst, lit)
-        return
-      }
-      case OPCODES.MOV_REG_REG: {
-        const [src, dst] = this.readOperands(OPCODES.MOV_REG_REG)
-        this.writeReg(dst, this.readReg(src))
-        return
-      }
-      case OPCODES.MOV_REG_MEM: {
-        const [src, addr] = this.readOperands(OPCODES.MOV_REG_MEM)
-        this.writeWord(addr, this.readReg(src))
-        return
-      }
-      case OPCODES.MOV_MEM_REG: {
-        const [addr, dst] = this.readOperands(OPCODES.MOV_MEM_REG)
-        const value = this.readWord(addr)
-        this.writeReg(dst, value)
-        return
-      }
-      case OPCODES.MOV_LIT_MEM: {
-        const [lit, addr] = this.readOperands(OPCODES.MOV_LIT_MEM)
-        this.writeWord(addr, lit)
-        return
-      }
-      case OPCODES.MOV_REG_PTR_REG: {
-        const [src, dst] = this.readOperands(OPCODES.MOV_REG_PTR_REG)
-        const ptr = this.readReg(src)
-        const value = this.readWord(ptr)
-        this.writeReg(dst, value)
-        return
-      }
-      case OPCODES.MOV_LIT_OFF_REG: {
-        const [addr, src, dst] = this.readOperands(OPCODES.MOV_LIT_OFF_REG)
-        const offset = this.readReg(src)
-        const value = this.readWord(addr + offset)
-        this.writeReg(dst, value)
-        return
-      }
-      case OPCODES.PSH_LIT: {
-        const [lit] = this.readOperands(OPCODES.PSH_LIT)
-        this.push(lit)
-        return
-      }
-      case OPCODES.PSH_REG: {
-        const [src] = this.readOperands(OPCODES.PSH_REG)
-        this.push(this.readReg(src))
-        return
-      }
-      case OPCODES.POP: {
-        const [dst] = this.readOperands(OPCODES.POP)
-        const value = this.pop()
-        this.writeReg(dst, value)
-        return
-      }
-      case OPCODES.ADD_LIT_REG: {
-        const [lit, reg] = this.readOperands(OPCODES.ADD_LIT_REG)
-        const value = lit + this.readReg(reg)
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.ADD_REG_REG: {
-        const [aReg, bReg] = this.readOperands(OPCODES.ADD_REG_REG)
-        const value = this.readReg(aReg) + this.readReg(bReg)
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.SUB_LIT_REG: {
-        const [lit, reg] = this.readOperands(OPCODES.SUB_LIT_REG)
-        const value = lit - this.readReg(reg)
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.SUB_REG_LIT: {
-        const [reg, lit] = this.readOperands(OPCODES.SUB_REG_LIT)
-        const value = this.readReg(reg) - lit
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.SUB_REG_REG: {
-        const [aReg, bReg] = this.readOperands(OPCODES.SUB_REG_REG)
-        const value = this.readReg(aReg) - this.readReg(bReg)
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.MUL_LIT_REG: {
-        const [lit, reg] = this.readOperands(OPCODES.MUL_LIT_REG)
-        const value = lit * this.readReg(reg)
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.MUL_REG_REG: {
-        const [aReg, bReg] = this.readOperands(OPCODES.MUL_REG_REG)
-        const value = this.readReg(aReg) * this.readReg(bReg)
-        this.writeReg(regIndex('acc'), value)
-        return
-      }
-      case OPCODES.INC_REG: {
-        const [reg] = this.readOperands(OPCODES.INC_REG)
-        const old = this.readReg(reg)
-        this.writeReg(reg, old + 1)
-        return
-      }
-      case OPCODES.DEC_REG: {
-        const [reg] = this.readOperands(OPCODES.DEC_REG)
-        const old = this.readReg(reg)
-        this.writeReg(reg, old - 1)
-        return
-      }
-      case OPCODES.JMP_NOT_EQ: {
-        const [lit, addr] = this.readOperands(OPCODES.JMP_NOT_EQ)
-        const value = this.readReg(regIndex('acc'))
-        if (lit !== value) {
-          this.writeReg(regIndex('ip'), addr)
-        }
-        return
-      }
-      case OPCODES.CAL_LIT: {
-        const [addr] = this.readOperands(OPCODES.CAL_LIT)
-        this.pushState()
-        this.writeReg(regIndex('ip'), addr)
-        return
-      }
-      case OPCODES.CAL_REG: {
-        const [src] = this.readOperands(OPCODES.CAL_REG)
-        const addr = this.readReg(src)
-        this.pushState()
-        this.writeReg(regIndex('ip'), addr)
-        return
-      }
-      case OPCODES.RET: {
-        this.popState()
-        return
-      }
-      case OPCODES.NO_OP: {
-        return
-      }
-      case OPCODES.HLT: {
-        return true
-      }
-    }
+  execute(opcode: Opcode): boolean | void {
+    const handler = HANDLERS[opcode]
+    if (!handler) throw new Error(`Unimplemented opcode: ${fmt16(opcode)}`)
+    return handler(this)
   }
 
   step(): boolean {
@@ -338,31 +198,31 @@ class CPU {
     }
   }
 
-  private readReg(idx: number): number {
+  readReg(idx: number): number {
     this.assertReg(idx)
     return this.registers.getUint16(idx * 2)
   }
 
-  private writeReg(idx: number, value: number) {
+  writeReg(idx: number, value: number) {
     this.assertReg(idx)
     this.registers.setUint16(idx * 2, u16(value))
   }
 
-  private push(value: number) {
+  push(value: number) {
     const spAddr = this.readReg(regIndex('sp'))
     this.writeWord(spAddr, value)
     this.writeReg(regIndex('sp'), spAddr - 2)
     this.stackFrameSize += 2
   }
 
-  private pop(): number {
+  pop(): number {
     const nextSpAddr = this.readReg(regIndex('sp')) + 2
     this.writeReg(regIndex('sp'), nextSpAddr)
     this.stackFrameSize -= 2
     return this.readWord(nextSpAddr)
   }
 
-  private pushState() {
+  pushState() {
     // Save registers
     for (let i = 0; i < 8; i++) {
       this.push(this.readReg(regIndex(`r${i + 1}` as RegName)))
@@ -379,7 +239,7 @@ class CPU {
     this.stackFrameSize = 0
   }
 
-  private popState() {
+  popState() {
     // Restore stack pointer to frame base
     const fpAddr = this.readReg(regIndex('fp'))
     this.writeReg(regIndex('sp'), fpAddr)
@@ -404,7 +264,7 @@ class CPU {
     this.writeReg(regIndex('fp'), fpAddr + frameSize)
   }
 
-  private readOperands<O extends Opcode>(opcode: O): OpcodeOperands[O] {
+  readOperands<O extends Opcode>(opcode: O): OpcodeOperands[O] {
     const schema = INSTRUCTIONS[opcode].schema
 
     // Mutable tuple during construction
@@ -452,6 +312,175 @@ class CPU {
     this.writeReg(ipIdx, nextInstrAddr + 2)
     return instr
   }
+}
+
+type OpcodeHandler = (cpu: CPU) => boolean | void
+
+export const HANDLERS: {
+  [K in (typeof OPCODES)[keyof typeof OPCODES]]: OpcodeHandler
+} = {
+  // move operations
+  [OPCODES.MOV_LIT_REG]: (cpu) => {
+    const [lit, dst] = cpu.readOperands(OPCODES.MOV_LIT_REG)
+    cpu.writeReg(dst, lit)
+  },
+  [OPCODES.MOV_REG_REG]: (cpu) => {
+    const [src, dst] = cpu.readOperands(OPCODES.MOV_REG_REG)
+    cpu.writeReg(dst, cpu.readReg(src))
+  },
+  [OPCODES.MOV_REG_MEM]: (cpu) => {
+    const [src, addr] = cpu.readOperands(OPCODES.MOV_REG_MEM)
+    cpu.writeWord(addr, cpu.readReg(src))
+  },
+  [OPCODES.MOV_MEM_REG]: (cpu) => {
+    const [addr, dst] = cpu.readOperands(OPCODES.MOV_MEM_REG)
+    cpu.writeReg(dst, cpu.readWord(addr))
+  },
+  [OPCODES.MOV_LIT_MEM]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.MOV_LIT_MEM)
+    cpu.writeWord(addr, lit)
+  },
+  [OPCODES.MOV_REG_PTR_REG]: (cpu) => {
+    const [src, dst] = cpu.readOperands(OPCODES.MOV_REG_PTR_REG)
+    const ptr = cpu.readReg(src)
+    cpu.writeReg(dst, cpu.readWord(ptr))
+  },
+  [OPCODES.MOV_LIT_OFF_REG]: (cpu) => {
+    const [addr, src, dst] = cpu.readOperands(OPCODES.MOV_LIT_OFF_REG)
+    const offset = cpu.readReg(src)
+    cpu.writeReg(dst, cpu.readWord(addr + offset))
+  },
+
+  // stack operations
+  [OPCODES.PSH_LIT]: (cpu) => {
+    const [lit] = cpu.readOperands(OPCODES.PSH_LIT)
+    cpu.push(lit)
+  },
+  [OPCODES.PSH_REG]: (cpu) => {
+    const [src] = cpu.readOperands(OPCODES.PSH_REG)
+    cpu.push(cpu.readReg(src))
+  },
+  [OPCODES.POP]: (cpu) => {
+    const [dst] = cpu.readOperands(OPCODES.POP)
+    cpu.writeReg(dst, cpu.pop())
+  },
+
+  // arithmetics
+  [OPCODES.ADD_LIT_REG]: (cpu) => {
+    const [lit, reg] = cpu.readOperands(OPCODES.ADD_LIT_REG)
+    cpu.writeReg(regIndex('acc'), lit + cpu.readReg(reg))
+  },
+  [OPCODES.ADD_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.ADD_REG_REG)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(aReg) + cpu.readReg(bReg))
+  },
+  [OPCODES.SUB_LIT_REG]: (cpu) => {
+    const [lit, reg] = cpu.readOperands(OPCODES.SUB_LIT_REG)
+    cpu.writeReg(regIndex('acc'), lit - cpu.readReg(reg))
+  },
+  [OPCODES.SUB_REG_LIT]: (cpu) => {
+    const [reg, lit] = cpu.readOperands(OPCODES.SUB_REG_LIT)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(reg) - lit)
+  },
+  [OPCODES.SUB_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.SUB_REG_REG)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(aReg) - cpu.readReg(bReg))
+  },
+  [OPCODES.MUL_LIT_REG]: (cpu) => {
+    const [lit, reg] = cpu.readOperands(OPCODES.MUL_LIT_REG)
+    cpu.writeReg(regIndex('acc'), lit * cpu.readReg(reg))
+  },
+  [OPCODES.MUL_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.MUL_REG_REG)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(aReg) * cpu.readReg(bReg))
+  },
+
+  // bit shifts
+  [OPCODES.LSH_REG_LIT]: (cpu) => {
+    const [reg, shift] = cpu.readOperands(OPCODES.LSH_REG_LIT)
+    const res = cpu.readReg(reg) << shift
+    cpu.writeReg(reg, res)
+  },
+  [OPCODES.LSH_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.LSH_REG_REG)
+    const res = cpu.readReg(aReg) << cpu.readReg(bReg)
+    cpu.writeReg(aReg, res)
+  },
+  [OPCODES.RSH_REG_LIT]: (cpu) => {
+    const [reg, shift] = cpu.readOperands(OPCODES.RSH_REG_LIT)
+    const res = cpu.readReg(reg) >> shift
+    cpu.writeReg(reg, res)
+  },
+  [OPCODES.RSH_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.RSH_REG_REG)
+    const res = cpu.readReg(aReg) >> cpu.readReg(bReg)
+    cpu.writeReg(aReg, res)
+  },
+
+  // bitwise logic (ACC)
+  [OPCODES.AND_REG_LIT]: (cpu) => {
+    const [reg, lit] = cpu.readOperands(OPCODES.AND_REG_LIT)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(reg) & lit)
+  },
+  [OPCODES.AND_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.AND_REG_REG)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(aReg) & cpu.readReg(bReg))
+  },
+  [OPCODES.OR_REG_LIT]: (cpu) => {
+    const [reg, lit] = cpu.readOperands(OPCODES.OR_REG_LIT)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(reg) | lit)
+  },
+  [OPCODES.OR_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.OR_REG_REG)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(aReg) | cpu.readReg(bReg))
+  },
+  [OPCODES.XOR_REG_LIT]: (cpu) => {
+    const [reg, lit] = cpu.readOperands(OPCODES.XOR_REG_LIT)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(reg) ^ lit)
+  },
+  [OPCODES.XOR_REG_REG]: (cpu) => {
+    const [aReg, bReg] = cpu.readOperands(OPCODES.XOR_REG_REG)
+    cpu.writeReg(regIndex('acc'), cpu.readReg(aReg) ^ cpu.readReg(bReg))
+  },
+  [OPCODES.NOT]: (cpu) => {
+    const [reg] = cpu.readOperands(OPCODES.NOT)
+    cpu.writeReg(regIndex('acc'), ~cpu.readReg(reg) & 0xffff)
+  },
+
+  // inc/dec
+  [OPCODES.INC_REG]: (cpu) => {
+    const [reg] = cpu.readOperands(OPCODES.INC_REG)
+    cpu.writeReg(reg, cpu.readReg(reg) + 1)
+  },
+  [OPCODES.DEC_REG]: (cpu) => {
+    const [reg] = cpu.readOperands(OPCODES.DEC_REG)
+    cpu.writeReg(reg, cpu.readReg(reg) - 1)
+  },
+
+  // control flow / calls
+  [OPCODES.JMP_NOT_EQ]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.JMP_NOT_EQ)
+    if (lit !== cpu.readReg(regIndex('acc'))) {
+      cpu.writeReg(regIndex('ip'), addr)
+    }
+  },
+  [OPCODES.CAL_LIT]: (cpu) => {
+    const [addr] = cpu.readOperands(OPCODES.CAL_LIT)
+    cpu.pushState()
+    cpu.writeReg(regIndex('ip'), addr)
+  },
+  [OPCODES.CAL_REG]: (cpu) => {
+    const [src] = cpu.readOperands(OPCODES.CAL_REG)
+    cpu.pushState()
+    cpu.writeReg(regIndex('ip'), cpu.readReg(src))
+  },
+  [OPCODES.RET]: (cpu) => {
+    cpu.popState()
+  },
+
+  // misc
+  [OPCODES.NO_OP]: () => {},
+  [OPCODES.HLT]: () => true,
 }
 
 export default CPU
