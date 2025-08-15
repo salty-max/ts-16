@@ -1,9 +1,10 @@
 import { createMemory, type Memory } from './memory'
 import {
-  INSTRUCTIONS,
+  OPCODE_METAS,
   OPCODES,
+  OpType,
   type Opcode,
-  type OpcodeOperands,
+  type OperandTuple,
 } from './instructions'
 import { regIndex, REGISTER_NAMES, type RegName } from './util/register'
 import {
@@ -71,8 +72,12 @@ class CPU {
   }
 
   execute(opcode: Opcode): boolean | void {
+    const meta = OPCODE_METAS[opcode]
     const handler = HANDLERS[opcode]
-    if (!handler) throw new Error(`Unimplemented opcode: ${fmt16(opcode)}`)
+    if (!handler)
+      throw new Error(
+        `Unimplemented opcode: ${fmt16(opcode)} (${meta?.name ?? '?'})`
+      )
     return handler(this)
   }
 
@@ -264,37 +269,37 @@ class CPU {
     this.writeReg(regIndex('fp'), fpAddr + frameSize)
   }
 
-  readOperands<O extends Opcode>(opcode: O): OpcodeOperands[O] {
-    const schema = INSTRUCTIONS[opcode].schema
+  readOperands<O extends Opcode>(opcode: O): OperandTuple[O] {
+    const schema = OPCODE_METAS[opcode].schema
 
     // Mutable tuple during construction
     const out = [] as unknown as {
-      -readonly [K in keyof OpcodeOperands[O]]: OpcodeOperands[O][K]
+      -readonly [K in keyof OperandTuple[O]]: OperandTuple[O][K]
     }
 
     schema.forEach((kind, i) => {
       let val: number
       switch (kind) {
-        case 'reg': {
+        case OpType.Reg: {
           val = this.fetchByte() % REGISTER_NAMES.length
-          out[i] = val as OpcodeOperands[O][typeof i]
+          out[i] = val as OperandTuple[O][typeof i]
           break
         }
-        case 'lit16':
-        case 'addr16': {
+        case OpType.Imm16:
+        case OpType.Addr: {
           val = this.fetchWord()
-          out[i] = val as OpcodeOperands[O][typeof i]
+          out[i] = val as OperandTuple[O][typeof i]
           break
         }
-        default: {
+        case OpType.Imm8: {
           val = this.fetchByte()
-          out[i] = val as OpcodeOperands[O][typeof i]
+          out[i] = val as OperandTuple[O][typeof i]
           break
         }
       }
     })
 
-    return out as OpcodeOperands[O]
+    return out as OperandTuple[O]
   }
 
   private fetchByte(): number {
@@ -317,7 +322,7 @@ class CPU {
 type OpcodeHandler = (cpu: CPU) => boolean | void
 
 export const HANDLERS: {
-  [K in (typeof OPCODES)[keyof typeof OPCODES]]: OpcodeHandler
+  [C in Opcode]: OpcodeHandler
 } = {
   // move operations
   [OPCODES.MOV_LIT_REG]: (cpu) => {
@@ -336,9 +341,17 @@ export const HANDLERS: {
     const [addr, dst] = cpu.readOperands(OPCODES.MOV_MEM_REG)
     cpu.writeReg(dst, cpu.readWord(addr))
   },
+  [OPCODES.MOV8_MEM_REG]: (cpu) => {
+    const [addr, reg] = cpu.readOperands(OPCODES.MOV8_MEM_REG)
+    cpu.writeReg(reg, cpu.readByte(addr))
+  },
   [OPCODES.MOV_LIT_MEM]: (cpu) => {
     const [lit, addr] = cpu.readOperands(OPCODES.MOV_LIT_MEM)
     cpu.writeWord(addr, lit)
+  },
+  [OPCODES.MOV8_LIT_MEM]: (cpu) => {
+    const [lit, addr] = cpu.readOperands(OPCODES.MOV8_LIT_MEM)
+    cpu.writeByte(addr, lit)
   },
   [OPCODES.MOV_REG_PTR_REG]: (cpu) => {
     const [src, dst] = cpu.readOperands(OPCODES.MOV_REG_PTR_REG)
