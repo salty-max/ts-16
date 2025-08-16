@@ -1,5 +1,4 @@
 import * as P from 'parsil'
-import formats from './formats'
 import {
   OpcodeForm,
   OPCODES_TABLE,
@@ -7,7 +6,17 @@ import {
   type OpcodeMeta,
   type OpcodeName,
 } from '../../instructions'
-import type { FormatParser } from './formats'
+
+import {
+  addrExpr,
+  hexLiteral,
+  register,
+  registerPtr,
+  separator,
+  variable,
+} from '../common'
+import { squareBracketExpr } from '../group'
+import { asInstruction, type ArgNode, type InstructionNode } from '../types'
 
 const FORM_PRIORITY: Partial<Record<OpcodeForm, number>> = {
   [OpcodeForm.REG_PTR_REG]: 90,
@@ -25,22 +34,6 @@ const FORM_PRIORITY: Partial<Record<OpcodeForm, number>> = {
   [OpcodeForm.NO_ARGS]: 10,
 }
 
-const FORM_IMPL: Partial<Record<OpcodeForm, FormatParser>> = {
-  [OpcodeForm.NO_ARGS]: formats.noArgs,
-  [OpcodeForm.SINGLE_IMM]: formats.singleImm,
-  [OpcodeForm.SINGLE_REG]: formats.singleReg,
-  [OpcodeForm.SINGLE_MEM]: formats.singleMem,
-  [OpcodeForm.IMM_REG]: formats.immReg,
-  [OpcodeForm.REG_REG]: formats.regReg,
-  [OpcodeForm.REG_MEM]: formats.regMem,
-  [OpcodeForm.REG_IMM]: formats.regImm,
-  [OpcodeForm.MEM_REG]: formats.memReg,
-  [OpcodeForm.IMM_MEM]: formats.immMem,
-  [OpcodeForm.IMM8_MEM]: formats.imm8Mem,
-  [OpcodeForm.REG_PTR_REG]: formats.regPtrReg,
-  [OpcodeForm.IMM_OFF_REG]: formats.immOffReg,
-}
-
 const metas = [...(Object.values(OPCODES_TABLE) as OpcodeMeta[])]
 metas.sort(
   (a, b) =>
@@ -48,24 +41,76 @@ metas.sort(
     (FORM_PRIORITY[b.form] ?? 0) - (FORM_PRIORITY[a.form] ?? 0)
 )
 
-const allInstructions = metas.map((meta) => {
-  const build = FORM_IMPL[meta.form]
-  if (!build) {
-    throw new Error(
-      `No format parser for form ${meta.form} (opcode ${meta.name})`
-    )
-  }
-  return build(meta.keyword as OpcodeKeyword, meta.name as OpcodeName)
-})
+const BY_KEYWORD = new Map<OpcodeKeyword, OpcodeMeta[]>()
+for (const m of metas) {
+  const list = BY_KEYWORD.get(m.keyword as OpcodeKeyword) ?? []
+  list.push(m)
+  BY_KEYWORD.set(m.keyword as OpcodeKeyword, list)
+}
 
-const choice = P.choice(allInstructions)
+type NonEmpty<T> = readonly [T, ...T[]]
+
+const imm = P.choice([hexLiteral, variable, squareBracketExpr])
+
+const argsOf = (parsers: NonEmpty<P.Parser<ArgNode>>): P.Parser<ArgNode[]> =>
+  P.coroutine((run) => {
+    const [first, ...rest] = parsers
+    const args: ArgNode[] = [run(first)]
+    for (const p of rest) {
+      run(separator)
+      args.push(run(p))
+    }
+    return args
+  })
+
+const FORM_ARGS_ONLY: Record<OpcodeForm, () => P.Parser<ArgNode[]>> = {
+  [OpcodeForm.NO_ARGS]: () =>
+    P.coroutine(() => {
+      return []
+    }),
+
+  [OpcodeForm.SINGLE_IMM]: () => argsOf([imm]),
+  [OpcodeForm.SINGLE_REG]: () => argsOf([register]),
+  [OpcodeForm.SINGLE_MEM]: () => argsOf([addrExpr]),
+  [OpcodeForm.IMM_REG]: () => argsOf([imm, register]),
+  [OpcodeForm.REG_IMM]: () => argsOf([register, imm]),
+  [OpcodeForm.REG_REG]: () => argsOf([register, register]),
+  [OpcodeForm.REG_MEM]: () => argsOf([register, addrExpr]),
+  [OpcodeForm.MEM_REG]: () => argsOf([addrExpr, register]),
+  [OpcodeForm.IMM_MEM]: () => argsOf([imm, addrExpr]),
+  [OpcodeForm.IMM8_MEM]: () => argsOf([imm, addrExpr]),
+  [OpcodeForm.REG_PTR_REG]: () => argsOf([registerPtr, register]),
+  [OpcodeForm.IMM_OFF_REG]: () => argsOf([imm, register, register]),
+}
+
+const IDENT = P.regex(/^[A-Za-z][A-Za-z0-9_]*/)
+
 export default P.coroutine((run) => {
   run(P.optionalWhitespace)
 
-  const node = run(choice)
+  const word = run(IDENT)
+  const lower = word.toLowerCase() as OpcodeKeyword
+
+  if (!BY_KEYWORD.has(lower)) {
+    run(P.fail(`Unknown mnemonic "${word}"`))
+  }
 
   run(P.optionalWhitespace)
-  run(P.endOfInput)
+
+  const variants = BY_KEYWORD.get(lower)!
+    .sort((a, b) => (FORM_PRIORITY[b.form] ?? 0) - (FORM_PRIORITY[a.form] ?? 0))
+    .map((meta) =>
+      FORM_ARGS_ONLY[meta.form]().map<InstructionNode>((args) =>
+        asInstruction({ opcode: meta.name as OpcodeName, args })
+      )
+    )
+
+  const node = run(
+    P.choice(variants).errorMap(() => `Invalid operands for "${word}"`)
+  )
+
+  run(P.optionalWhitespace)
+  run(P.endOfInput.errorMap(() => `Invalid operands for "${word}"`))
 
   return node
 })
