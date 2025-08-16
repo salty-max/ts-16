@@ -25,6 +25,11 @@ export type RegNode = {
   value: RegName
 }
 
+export type RegPtrNode = {
+  type: 'REGISTER_PTR'
+  value: RegName
+}
+
 export type HexNode = {
   type: 'HEX_LITERAL'
   value: number
@@ -42,7 +47,7 @@ export type VarNode = {
   value: string
 }
 
-export type ArgNode = HexNode | VarNode
+export type ValueNode = HexNode | VarNode
 
 export type SqBrExprNode = {
   type: 'SQUARE_BRACKET_EXPR'
@@ -62,7 +67,12 @@ export type AddrExprNode = {
 export type GroupNode = SqBrExprNode | ParenExprNode
 export type OperandNode = HexNode | VarNode | GroupNode | BinaryOpNode
 export type ExprToken = OperandNode | OperatorNode
-export type ExprNode = RegNode | ArgNode | SqBrExprNode | AddrExprNode
+export type ArgNode =
+  | RegNode
+  | RegPtrNode
+  | ValueNode
+  | SqBrExprNode
+  | AddrExprNode
 
 export type BinaryOpNode = {
   type: 'BINARY_OP'
@@ -74,7 +84,7 @@ export type BinaryOpNode = {
 export type InstructionNode = {
   type: 'INSTRUCTION'
   opcode: OpcodeName
-  args: ExprNode[]
+  args: ArgNode[]
 }
 
 export const asOpPlus = (value: '+'): OpPlusNode => ({
@@ -94,6 +104,11 @@ export const asOpFactor = (value: '*'): OpFactorNode => ({
 
 export const asRegister = (value: RegName): RegNode => ({
   type: 'REGISTER',
+  value,
+})
+
+export const asRegisterPtr = (value: RegName): RegPtrNode => ({
+  type: 'REGISTER_PTR',
   value,
 })
 
@@ -147,7 +162,7 @@ export const asInstruction = ({
   args,
 }: {
   opcode: OpcodeName
-  args: ExprNode[]
+  args: ArgNode[]
 }): InstructionNode => ({
   type: 'INSTRUCTION',
   opcode,

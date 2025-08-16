@@ -1,0 +1,95 @@
+import * as P from 'parsil'
+import {
+  addrExpr,
+  hexLiteral,
+  keyword,
+  register,
+  registerPtr,
+  separator,
+  upperOrLowerStr,
+  variable,
+} from '../common'
+import { asInstruction, type ArgNode, type InstructionNode } from '../types'
+import { squareBracketExpr } from '../group'
+import type { OpcodeKeyword, OpcodeName } from '../../instructions'
+
+export type FormatParser = (
+  keyword: OpcodeKeyword,
+  type: OpcodeName
+) => P.Parser<InstructionNode>
+
+type NonEmpty<T> = readonly [T, ...T[]]
+
+const imm = P.choice([hexLiteral, variable, squareBracketExpr])
+
+const withArgs = (
+  k: OpcodeKeyword,
+  op: OpcodeName,
+  argParsers: NonEmpty<P.Parser<ArgNode>>
+): P.Parser<InstructionNode> =>
+  P.coroutine((run) => {
+    run(keyword(k))
+
+    const [first, ...rest] = argParsers
+    const args: ArgNode[] = [run(first)]
+
+    for (const p of rest) {
+      run(separator)
+      args.push(run(p))
+    }
+
+    run(P.optionalWhitespace)
+
+    return asInstruction({ opcode: op, args })
+  })
+
+const isAlpha = (ch: string) => /[A-Za-z0-9_]/.test(ch)
+
+const noArgs: FormatParser = (k, op) =>
+  P.coroutine((run) => {
+    run(upperOrLowerStr(k))
+
+    const peek = run(P.peek)
+    if (peek !== -1) {
+      const ch = String.fromCharCode(peek)
+      if (isAlpha(ch)) run(P.fail(`expected boundary after "${k}"`))
+    }
+
+    run(P.optionalWhitespace)
+
+    return asInstruction({
+      opcode: op,
+      args: [],
+    })
+  })
+
+const singleImm: FormatParser = (k, op) => withArgs(k, op, [imm])
+const singleReg: FormatParser = (k, op) => withArgs(k, op, [register])
+const singleMem: FormatParser = (k, op) => withArgs(k, op, [addrExpr])
+const immReg: FormatParser = (k, op) => withArgs(k, op, [imm, register])
+const regReg: FormatParser = (k, op) => withArgs(k, op, [register, register])
+const regMem: FormatParser = (k, op) => withArgs(k, op, [register, addrExpr])
+const regImm: FormatParser = (k, op) => withArgs(k, op, [register, imm])
+const memReg: FormatParser = (k, op) => withArgs(k, op, [addrExpr, register])
+const immMem: FormatParser = (k, op) => withArgs(k, op, [imm, addrExpr])
+const imm8Mem: FormatParser = (k, op) => withArgs(k, op, [imm, addrExpr])
+const regPtrReg: FormatParser = (k, op) =>
+  withArgs(k, op, [registerPtr, register])
+const immOffReg: FormatParser = (k, op) =>
+  withArgs(k, op, [imm, registerPtr, register])
+
+export default {
+  noArgs,
+  singleImm,
+  singleReg,
+  singleMem,
+  immReg,
+  regReg,
+  regMem,
+  regImm,
+  memReg,
+  immMem,
+  imm8Mem,
+  regPtrReg,
+  immOffReg,
+}

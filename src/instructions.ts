@@ -6,21 +6,19 @@ export const enum OpType {
 }
 
 export enum OpcodeForm {
-  NO_ARGS,
-  SINGLE_REG,
-  SINGLE_IMM,
-  SINGLE_ADDR,
-  IMM_REG,
-  REG_IMM,
-  REG_REG,
-  REG_MEM,
-  MEM_REG,
-  IMM_MEM,
-  IMM8_MEM,
-  REG_PTR_REG,
-  IMM_OFF_REG,
-  REG_REG_PTR,
-  IMM_REG_PTR,
+  NO_ARGS = 'noArgs',
+  SINGLE_REG = 'singleReg',
+  SINGLE_IMM = 'singleImm',
+  SINGLE_MEM = 'singleMem',
+  IMM_REG = 'immReg',
+  REG_IMM = 'regImm',
+  REG_REG = 'regReg',
+  REG_MEM = 'regMem',
+  MEM_REG = 'memReg',
+  IMM_MEM = 'immMem',
+  IMM8_MEM = 'imm8Mem',
+  REG_PTR_REG = 'regPtrReg',
+  IMM_OFF_REG = 'immOffReg',
 }
 
 export const OPERAND_SIZE: Record<OpType, number> = {
@@ -389,7 +387,7 @@ const RAW_OPCODES = [
     name: 'CAL_LIT',
     keyword: 'call',
     schema: [OpType.Addr],
-    form: OpcodeForm.SINGLE_ADDR,
+    form: OpcodeForm.SINGLE_MEM,
   },
   {
     code: 0x5f,
@@ -419,6 +417,7 @@ export const OPCODES_TABLE = RAW_OPCODES.map(withMeta)
 
 export type OpcodeEntry = (typeof RAW_OPCODES)[number]
 export type OpcodeName = OpcodeEntry['name']
+export type OpcodeKeyword = OpcodeEntry['keyword']
 export type Opcode = OpcodeEntry['code']
 
 export const OPCODES = Object.fromEntries(

@@ -9,8 +9,10 @@ import {
   asVariable,
   asAddrExprNode,
   asAddrLiteral,
+  asRegisterPtr,
 } from './types'
 import { squareBracketExpr } from './group'
+import type { OpcodeKeyword } from '../instructions'
 
 export const upperOrLowerStr = (s: string) =>
   P.choice([P.str(s.toUpperCase()), P.str(s.toLowerCase())])
@@ -25,9 +27,21 @@ export const validIdentifier = mapJoin(
   ])
 )
 
-export const register = P.choice(
-  REGISTER_NAMES.map((n) => upperOrLowerStr(n))
-).map((value) => asRegister(value as RegName))
+export const keyword = (k: OpcodeKeyword) =>
+  P.sequenceOf([upperOrLowerStr(k), P.whitespace])
+
+export const separator = P.between(
+  P.optionalWhitespace,
+  P.optionalWhitespace
+)(P.char(','))
+
+export const register = P.choice(REGISTER_NAMES.map(upperOrLowerStr)).map(
+  (value) => asRegister(value as RegName)
+)
+
+export const registerPtr = P.char('&')
+  .chain(() => P.choice(REGISTER_NAMES.map(upperOrLowerStr)))
+  .map((value) => asRegisterPtr(value as RegName))
 
 const hexDigit = P.regex(/^[0-9A-Fa-f]/)
 export const hexLiteral = P.char('$')
