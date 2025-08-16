@@ -1,3 +1,4 @@
+import type { OpcodeName } from '../../src/instructions'
 import {
   type HexNode,
   type VarNode,
@@ -9,7 +10,38 @@ import {
   type BinaryOpNode,
   type SqBrExprNode,
   type ParenExprNode,
+  type InstructionNode,
+  type ArgNode,
 } from '../../src/parser/types'
+import type { RegName } from '../../src/util'
+
+export const REG = (name: RegName) =>
+  ({ type: 'REGISTER', value: name }) as const
+
+export const REG_PTR = (name: RegName) =>
+  ({ type: 'REGISTER_PTR', value: name }) as const
+
+export const ADDR_HEX = (raw: string) =>
+  ({
+    type: 'ADDRESS',
+    expr: {
+      type: 'ADDR_LITERAL',
+      raw,
+      value: parseInt(raw.replace(/^\$/, ''), 16),
+    },
+  }) as const
+
+export const ADDR_SQ = (node: any) =>
+  ({ type: 'ADDRESS', expr: SQ1(node) }) as const
+
+export const INS = (
+  opcode: OpcodeName | string,
+  ...args: ArgNode[]
+): InstructionNode => ({
+  type: 'INSTRUCTION',
+  opcode: opcode as OpcodeName,
+  args,
+})
 
 export const HEX = (raw: string): HexNode => ({
   type: 'HEX_LITERAL',
@@ -37,7 +69,6 @@ export const BIN = (
   b,
 })
 
-/** Folded groups (what your parser emits after precedence folding) */
 export const SQ1 = (n: OperandNode): SqBrExprNode => ({
   type: 'SQUARE_BRACKET_EXPR',
   expr: [n],

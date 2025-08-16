@@ -1,7 +1,7 @@
 import instructions from './instructions'
 import { deepLog } from './util/deep-log'
 
-const res = instructions.run('push [$02 + $03 * $04]')
+const res = instructions.run('prout')
 if (res.isError) throw new Error(res.error)
 deepLog(res.result, {
   maxDepth: Infinity,

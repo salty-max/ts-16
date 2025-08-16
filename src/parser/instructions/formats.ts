@@ -3,10 +3,10 @@ import {
   addrExpr,
   hexLiteral,
   keyword,
+  mnemonic,
   register,
   registerPtr,
   separator,
-  upperOrLowerStr,
   variable,
 } from '../common'
 import { asInstruction, type ArgNode, type InstructionNode } from '../types'
@@ -43,24 +43,11 @@ const withArgs = (
     return asInstruction({ opcode: op, args })
   })
 
-const isAlpha = (ch: string) => /[A-Za-z0-9_]/.test(ch)
-
-const noArgs: FormatParser = (k, op) =>
+export const noArgs: FormatParser = (k, op) =>
   P.coroutine((run) => {
-    run(upperOrLowerStr(k))
-
-    const peek = run(P.peek)
-    if (peek !== -1) {
-      const ch = String.fromCharCode(peek)
-      if (isAlpha(ch)) run(P.fail(`expected boundary after "${k}"`))
-    }
-
+    run(mnemonic(k))
     run(P.optionalWhitespace)
-
-    return asInstruction({
-      opcode: op,
-      args: [],
-    })
+    return asInstruction({ opcode: op, args: [] })
   })
 
 const singleImm: FormatParser = (k, op) => withArgs(k, op, [imm])
@@ -76,7 +63,7 @@ const imm8Mem: FormatParser = (k, op) => withArgs(k, op, [imm, addrExpr])
 const regPtrReg: FormatParser = (k, op) =>
   withArgs(k, op, [registerPtr, register])
 const immOffReg: FormatParser = (k, op) =>
-  withArgs(k, op, [imm, registerPtr, register])
+  withArgs(k, op, [imm, register, register])
 
 export default {
   noArgs,

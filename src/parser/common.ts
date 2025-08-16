@@ -30,6 +30,18 @@ export const validIdentifier = mapJoin(
 export const keyword = (k: OpcodeKeyword) =>
   P.sequenceOf([upperOrLowerStr(k), P.whitespace])
 
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Match the exact mnemonic (case-insensitive) with a word boundary:
+ *  - succeeds only if NOT followed by [A-Za-z0-9_]
+ *  - does NOT consume trailing whitespace
+ *  - e.g. mnemonic('mov') won't match "mov8".
+ */
+export const mnemonic = (k: string): P.Parser<string> => {
+  const rx = new RegExp(`^(?:${reEsc(k)})(?![A-Za-z0-9_])`, 'i')
+  return P.regex(rx)
+}
+
 export const separator = P.between(
   P.optionalWhitespace,
   P.optionalWhitespace
