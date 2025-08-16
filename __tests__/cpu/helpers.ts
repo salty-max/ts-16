@@ -1,10 +1,10 @@
 import { expect } from 'bun:test'
-import CPU from '../src/cpu'
-import { ANSI_BOLD, ANSI_GREY, ANSI_RESET, fmt16 } from '../src/util/logger'
-import type { RegName } from '../src/util'
-import { createMemory } from '../src/memory'
-import { OPCODES } from '../src/instructions'
-import MemoryMapper from '../src/memory-mapper'
+import CPU from '../../src/cpu'
+import { ANSI_BOLD, ANSI_GREY, ANSI_RESET, fmt16 } from '../../src/util/logger'
+import type { RegName } from '../../src/util'
+import { createMemory } from '../../src/memory'
+import { OPCODES } from '../../src/instructions'
+import MemoryMapper from '../../src/memory-mapper'
 
 export const hi = (w: number) => (w >>> 8) & 0xff
 export const lo = (w: number) => w & 0xff

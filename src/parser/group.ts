@@ -12,7 +12,7 @@ import {
   type ParenExprNode,
 } from './types'
 import { hexLiteral, operator, variable } from './common'
-import { last } from './util'
+import { isOpChar, last, peekChar } from './util'
 
 const PRIORITIES: Record<OperatorNode['type'], number> = {
   FACTOR: 2,
@@ -36,7 +36,7 @@ function readValue(tok: ExprToken): OperandNode {
   return tok
 }
 
-function parseExpr(
+export function parseExpr(
   tokens: ExprToken[],
   i = 0,
   minPrec = 0
@@ -45,40 +45,32 @@ function parseExpr(
 
   let idx = i
 
-  // LHS
+  // LHS: must start with a value
   const first = at(tokens, idx++, 'Expected value at start of expression')
   let lhs = readValue(first)
 
   // (op rhs)*
   while (idx < tokens.length) {
-    const tok = tokens[idx]!
-    if (!isOperator(tok)) break
+    const opTok = tokens[idx]
+    if (!isOperator(opTok!)) break
 
-    const prec = PRIORITIES[tok.type]
+    const prec = PRIORITIES[opTok.type]
     if (prec < minPrec) break
 
-    const op = tok
+    // consume operator
+    const op = opTok
     idx++
 
-    const rhsTok = at(tokens, idx++, 'Expected right-hand value after operator')
-    let rhs = readValue(rhsTok)
-
-    while (idx < tokens.length) {
-      const look = tokens[idx]!
-      if (!isOperator(look)) break
-      const lookPrec = PRIORITIES[look.type]
-      if (lookPrec <= prec) break
-      const sub = parseExpr(tokens, idx, lookPrec)
-      rhs = sub.node
-      idx = sub.next
-    }
+    // parse the entire RHS with tighter binding
+    const rhsParsed = parseExpr(tokens, idx, prec + 1)
+    const rhs = rhsParsed.node
+    idx = rhsParsed.next
 
     lhs = asBinaryOp(lhs, rhs, op)
   }
 
   return { node: lhs, next: idx }
 }
-
 function foldGroup<G extends GroupNode>(group: G): G {
   if (group.expr.length === 0) throw new Error('Empty group')
   if (group.expr.length === 1 && !isOperator(group.expr[0]!)) return group
@@ -91,37 +83,60 @@ function foldGroup<G extends GroupNode>(group: G): G {
   return { ...group, expr: [node] } as G
 }
 
+const eatSpaces = (run: any): number => {
+  let n = 0
+  while (peekChar(run) === ' ') {
+    run(P.char(' '))
+    n++
+  }
+  return n
+}
+
 export const squareBracketExpr = P.coroutine((run) => {
   run(P.char('['))
+
   run(P.optionalWhitespace)
 
-  enum States {
-    EXPECT_ELEMENT,
+  enum S {
+    EXPECT_VAL,
     EXPECT_OP,
   }
-
+  let state = S.EXPECT_VAL
   const expr: ExprToken[] = []
-  let state = States.EXPECT_ELEMENT
 
   while (true) {
-    if (state === States.EXPECT_ELEMENT) {
-      const res = run(P.choice([hexLiteral, variable, parenExpr]))
-      expr.push(res)
-      state = States.EXPECT_OP
-      run(P.optionalWhitespace)
-    } else if (state === States.EXPECT_OP) {
-      const nextChar = run(P.peek)
-      if (String.fromCharCode(nextChar) === ']') {
-        run(P.char(']'))
-        run(P.optionalWhitespace)
-        break
-      }
+    if (state === S.EXPECT_VAL) {
+      const ch = peekChar(run)
 
-      const res = run(operator)
-      expr.push(res)
-      state = States.EXPECT_ELEMENT
-      run(P.optionalWhitespace)
+      if (ch === ']') {
+        if (expr.length === 0) run(P.fail('Empty group'))
+        run(P.fail('Expected right-hand value after operator'))
+      }
+      if (isOpChar(ch)) run(P.fail('Expected value, got operator'))
+
+      const val = run(P.choice([hexLiteral, variable, parenExpr]))
+      expr.push(val)
+      state = S.EXPECT_OP
+      continue
     }
+
+    const nSpacesBefore = eatSpaces(run)
+
+    if (peekChar(run) === ']') {
+      run(P.char(']'))
+      break
+    }
+
+    if (nSpacesBefore > 1)
+      run(P.fail('Only a single space allowed before operator'))
+    if (!isOpChar(peekChar(run))) run(P.fail('Expected operator or "]"'))
+
+    expr.push(run(operator))
+    state = S.EXPECT_VAL
+
+    const nSpacesAfterOp = eatSpaces(run)
+    if (nSpacesAfterOp > 1)
+      run(P.fail('Only a single space allowed before value'))
   }
 
   return asSquareBracketExpr(expr)
@@ -139,13 +154,15 @@ const parenExpr: P.Parser<ParenExprNode> = P.coroutine<ParenExprNode>((run) => {
   const stack: Nested<ExprToken>[] = [expr]
   const open = P.char('(')
   const close = P.char(')')
-  let state = States.ELEMENT_OR_OPEN
 
   run(open)
+  run(P.optionalWhitespace)
+
+  let state = States.ELEMENT_OR_OPEN
 
   while (true) {
     const curr = last(stack)
-    const nextChar = String.fromCharCode(run(P.peek))
+    const nextChar = peekChar(run)
 
     switch (state) {
       case States.OPEN_BRACKET: {
@@ -157,43 +174,52 @@ const parenExpr: P.Parser<ParenExprNode> = P.coroutine<ParenExprNode>((run) => {
         state = States.ELEMENT_OR_OPEN
         break
       }
+
       case States.CLOSE_BRACKET: {
         run(close)
         stack.pop()
         if (stack.length === 0) {
-          break
+          return typeParenExpr(expr)
         }
-        run(P.optionalWhitespace)
         state = States.OP_OR_CLOSE
         break
       }
+
       case States.ELEMENT_OR_OPEN: {
         if (nextChar === ')') {
-          run(P.fail('Unexpected end of expression'))
+          if (curr.length === 0) run(P.fail('Empty group'))
+          run(P.fail('Expected right-hand value after operator'))
         }
         if (nextChar === '(') {
           state = States.OPEN_BRACKET
         } else {
-          curr.push(run(P.choice([hexLiteral, variable])))
-          run(P.optionalWhitespace)
+          if (isOpChar(nextChar)) run(P.fail('Expected value, got operator'))
+
+          curr.push(run(P.choice<ExprToken>([hexLiteral, variable])))
           state = States.OP_OR_CLOSE
         }
         break
       }
+
       case States.OP_OR_CLOSE: {
-        if (nextChar === ')') {
+        const nSpaces = eatSpaces(run)
+        if (peekChar(run) === ')') {
           state = States.CLOSE_BRACKET
-        } else {
-          curr.push(run(operator))
-          run(P.optionalWhitespace)
-          state = States.ELEMENT_OR_OPEN
+          break
         }
+
+        if (nSpaces > 1)
+          run(P.fail('Only a single space allowed before operator'))
+        if (!isOpChar(peekChar(run))) run(P.fail('Expected operator or ")"'))
+
+        curr.push(run(operator))
+
+        const nAfter = eatSpaces(run)
+        if (nAfter > 1) run(P.fail('Only a single space allowed before value'))
+
+        state = States.ELEMENT_OR_OPEN
         break
       }
     }
-
-    if (stack.length === 0) break
   }
-
-  return typeParenExpr(expr)
-})
+}).map(foldGroup)
